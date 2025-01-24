@@ -47,7 +47,7 @@ jobs:
         if: github.ref == 'refs/heads/master'
         uses: ncipollo/release-action@6c75be85e571768fa31b40abf38de58ba0397db5
         with:
-          repo: FF7R-UEVR
+          repo: FF7RB-UEVR
           owner: praydog
           name: ${{format('Release {0} ({1})', github.run_number, github.sha)}}
           tag: ${{format('run-{0}', github.run_number)}}
