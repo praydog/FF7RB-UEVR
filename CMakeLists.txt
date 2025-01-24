@@ -82,21 +82,6 @@ FetchContent_Declare(kananlib SYSTEM
 )
 FetchContent_MakeAvailable(kananlib)
 
-set(BUILD_TOOLS OFF CACHE BOOL "" FORCE)
-
-message(STATUS "Fetching directxtk12 (528801aa6dd8d628c2f756c41a76d300f47de478)...")
-FetchContent_Declare(directxtk12 SYSTEM
-	GIT_REPOSITORY
-		"https://github.com/microsoft/DirectXTK12"
-	GIT_TAG
-		528801aa6dd8d628c2f756c41a76d300f47de478
-)
-FetchContent_MakeAvailable(directxtk12)
-
-if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 19.35)
-    target_compile_options(DirectXTK12 PRIVATE /Zc:templateScope-)
-endif()
-
 # Target: ff7rebirth_
 set(ff7rebirth__SOURCES
 	"src/Plugin.cpp"
@@ -128,7 +113,6 @@ target_include_directories(ff7rebirth_ PUBLIC
 
 target_link_libraries(ff7rebirth_ PUBLIC
 	kananlib
-	DirectXTK12
 )
 
 set(CMKR_TARGET ff7rebirth_)
