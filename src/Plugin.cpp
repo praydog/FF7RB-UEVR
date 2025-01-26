@@ -93,6 +93,10 @@ private:
     void* on_render_composite_layer_internal(FEndMenuRenderer* self, FEndMenuRenderContext* context, OnRenderCompositeLayerFn orig) {
         m_last_menu_renderer = self;
 
+        if (!API::get()->param()->vr->is_hmd_active()) {
+            return orig(self, context);
+        }
+
         const auto original_render_pass = context->cmd_list->bInsideRenderPass;
         const auto original_render_target = context->ui_render_target;
 
