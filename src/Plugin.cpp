@@ -96,6 +96,13 @@ private:
         if (!API::get()->param()->vr->is_hmd_active()) {
             return orig(self, context);
         }
+        
+        static bool once = true;
+
+        if (once) {
+            API::get()->param()->vr->set_mod_value("UI_InvertAlpha", "true");
+            once = false;
+        }
 
         const auto original_render_pass = context->cmd_list->bInsideRenderPass;
         const auto original_render_target = context->ui_render_target;
