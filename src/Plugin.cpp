@@ -88,22 +88,24 @@ private:
     using OnRenderCompositeLayerFn = void* (*)(FEndMenuRenderer* self, FEndMenuRenderContext* context);
     OnRenderCompositeLayerFn m_orig_render_composite_layer{nullptr};
     int m_hook_id{-1};
+    FEndMenuRenderer* m_last_menu_renderer{nullptr};
 
-    void* on_render_composite_layer_internal(FEndMenuRenderer* self, FEndMenuRenderContext* context) {
+    void* on_render_composite_layer_internal(FEndMenuRenderer* self, FEndMenuRenderContext* context, OnRenderCompositeLayerFn orig) {
+        m_last_menu_renderer = self;
+
         const auto original_render_pass = context->cmd_list->bInsideRenderPass;
         const auto original_render_target = context->ui_render_target;
 
-        if (context->ui_render_target != nullptr) {
-            auto ui_render_target = API::StereoHook::get_ui_render_target();
+        auto ui_render_target = API::StereoHook::get_ui_render_target();
 
-            // Replace render target with ours
-            if (ui_render_target != nullptr) {
-                context->ui_render_target = ui_render_target;
-                context->cmd_list->bInsideRenderPass = false; // Allows our render target to be set up
-            }
+        // Replace render target with ours
+        if (ui_render_target != nullptr) {
+            context->ui_render_target = ui_render_target;
+            context->cmd_list->bInsideRenderPass = false; // Allows our render target to be set up
         }
 
-        auto res = m_orig_render_composite_layer(self, context);
+        orig(self, context);
+        auto res = orig(self, context);
 
         context->ui_render_target = original_render_target;
         context->cmd_list->bInsideRenderPass = original_render_pass;
@@ -119,7 +121,7 @@ private:
             once = false;
         }
 
-        auto res = g_plugin->on_render_composite_layer_internal(self, context);
+        auto res = g_plugin->on_render_composite_layer_internal(self, context, g_plugin->m_orig_render_composite_layer);
 
         return res;
     }
