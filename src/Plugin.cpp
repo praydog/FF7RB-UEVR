@@ -54,6 +54,10 @@ public:
         if (m_hook_id >= 0) {
             API::get()->param()->functions->unregister_inline_hook(m_hook_id);
         }
+
+        if (m_post_process_settings_hook_id >= 0) {
+            API::get()->param()->functions->unregister_inline_hook(m_post_process_settings_hook_id);
+        }
     }
 
     void on_initialize() override {
@@ -73,6 +77,7 @@ public:
 
         SPDLOG_INFO("FF7Plugin entry point");
         hook_render_composite_layer();
+        hook_post_process_settings();
         patch_motion_blur();
     }
 
@@ -238,6 +243,82 @@ private:
         }
 
         SPDLOG_INFO("Patched MotionBlurIntermediate");
+    }
+
+    int m_post_process_settings_hook_id{-1};
+    using PostProcessSettingsFn = void* (*)(void* self, void* a2, void* a3, void* a4);
+    PostProcessSettingsFn m_orig_post_process_settings{nullptr};
+
+    void* on_post_process_settings_internal(void* self, void* a2, void* a3, void* a4) {
+        auto res = m_orig_post_process_settings(self, a2, a3, a4);
+
+        static const auto post_process_settings_t = API::get()->find_uobject<API::UScriptStruct>(L"ScriptStruct /Script/Engine.PostProcessSettings");
+
+        if (post_process_settings_t != nullptr) {
+            static const auto vignette_intensity_prop = post_process_settings_t->find_property(L"VignetteIntensity");
+            static const auto vignette_lens_intensity_prop = post_process_settings_t->find_property(L"LensVignetteIntensity");
+
+            if (vignette_intensity_prop != nullptr) {
+                static const auto offset = vignette_intensity_prop->get_offset();
+                *(float*)((uintptr_t)self + offset) = 0.0f;
+            }
+
+            if (vignette_lens_intensity_prop != nullptr) {
+                static const auto offset = vignette_lens_intensity_prop->get_offset();
+                *(float*)((uintptr_t)self + offset) = 0.0f;
+            }
+        }
+
+        return res;
+    }
+
+    static void* on_post_process_settings(void* self, void* a2, void* a3, void* a4) {
+        static bool once = true;
+
+        if (once) {
+            SPDLOG_INFO("FPostProcessSettings::PostProcessSettings");
+            once = false;
+        }
+
+        return g_plugin->on_post_process_settings_internal(self, a2, a3, a4);
+    }
+
+    void hook_post_process_settings() {
+        const auto game = utility::get_executable();
+        const auto str = utility::scan_string(game, L"r.DefaultFeature.AutoExposure.Bias");
+
+        if (!str) {
+            API::get()->log_error("Failed to find r.DefaultFeature.AutoExposure.Bias");
+            return;
+        }
+
+        std::optional<uintptr_t> func_start{};
+
+        const auto ref = utility::scan_displacement_reference(game, *str, [&](uintptr_t addr) -> bool {
+            func_start = utility::find_function_start_with_call(addr);
+
+            if (!func_start) {
+                return false;
+            }
+
+            size_t refs{};
+            utility::scan_displacement_reference(game, *func_start, [&](uintptr_t addr2) -> bool {
+                ++refs;
+                return false;
+            });
+
+            return refs > 3;
+        });
+
+        if (!ref) {
+            API::get()->log_error("Failed to find r.DefaultFeature.AutoExposure.Bias callsite");
+            return;
+        }
+
+        SPDLOG_INFO("r.DefaultFeature.AutoExposure.Bias callsite at 0x{:x}", *ref);
+        SPDLOG_INFO("FPostProcessSettings::FPostProcessSettings at 0x{:x}", *func_start);
+
+        m_post_process_settings_hook_id = API::get()->param()->functions->register_inline_hook((void*)*func_start, &on_post_process_settings, (void**)&m_orig_post_process_settings);
     }
 };
 
