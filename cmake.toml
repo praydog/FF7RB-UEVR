@@ -41,7 +41,7 @@ tag = "76fb40d95455f249bd70824ecfcae7a8f0930fa3"
 
 [fetch-content.kananlib]
 git = "https://github.com/cursey/kananlib"
-tag = "b295511906ae3a5476427b2292ba25ff6af03331"
+tag = "7ceca3f80a1ec4f89b613afb3f5b41832766609e"
 
 [target.ff7rebirth_]
 type = "shared"

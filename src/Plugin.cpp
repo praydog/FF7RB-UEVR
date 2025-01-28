@@ -49,6 +49,8 @@ private:
 class FF7Plugin final : public uevr::Plugin {
 public:
     virtual ~FF7Plugin() {
+        m_motion_blur_patch.reset();
+
         if (m_hook_id >= 0) {
             API::get()->param()->functions->unregister_inline_hook(m_hook_id);
         }
@@ -71,6 +73,7 @@ public:
 
         SPDLOG_INFO("FF7Plugin entry point");
         hook_render_composite_layer();
+        patch_motion_blur();
     }
 
 private:
@@ -156,6 +159,85 @@ private:
         m_hook_id = API::get()->param()->functions->register_inline_hook((void*)*fn, &on_render_composite_layer, (void**)&m_orig_render_composite_layer);
 
         API::get()->log_info("FEndMenuRenderer::OnRenderCompositeLayerEx hooked at 0x%p", (void*)*fn);
+    }
+
+    Patch::Ptr m_motion_blur_patch{nullptr};
+
+    void patch_motion_blur() {
+        SPDLOG_INFO("Scanning for MotionBlurIntermediate");
+
+        const auto game = utility::get_executable();
+        const auto motion_blur_intermediate_ref = utility::find_function_from_string_ref(game, L"MotionBlurIntermediate", true);
+
+        if (!motion_blur_intermediate_ref) {
+            API::get()->log_error("Failed to find MotionBlurIntermediate");
+            SPDLOG_INFO("Failed to find MotionBlurIntermediate");
+            return;
+        }
+
+        const auto fn = utility::find_function_start_with_call(*motion_blur_intermediate_ref);
+
+        if (!fn) {
+            API::get()->log_error("Failed to find MotionBlurIntermediate function start");
+            SPDLOG_INFO("Failed to find MotionBlurIntermediate function start");
+            return;
+        }
+
+        const auto fn_callsite = utility::scan_displacement_reference(game, *fn, [](uintptr_t addr) -> bool {
+            return *(uint8_t*)(addr - 1) == 0xE8;
+        });
+
+        if (!fn_callsite) {
+            API::get()->log_error("Failed to find MotionBlurIntermediate callsite");
+            SPDLOG_INFO("Failed to find MotionBlurIntermediate callsite");
+            return;
+        }
+
+        auto preceding_insns = utility::get_disassembly_behind(*fn_callsite);
+
+        if (preceding_insns.empty()) {
+            API::get()->log_error("Failed to disassemble preceding instructions for MotionBlurIntermediate");
+            SPDLOG_INFO("Failed to disassemble preceding instructions for MotionBlurIntermediate");
+            return;
+        }
+
+        std::reverse(preceding_insns.begin(), preceding_insns.end());
+
+        // Find first conditional jmp
+        auto jmp_insn = std::find_if(preceding_insns.begin(), preceding_insns.end(), [](const utility::Resolved& insn) {
+            auto& ix = insn.instrux;
+            return ix.BranchInfo.IsBranch && ix.BranchInfo.IsConditional;
+        });
+
+        if (jmp_insn == preceding_insns.end()) {
+            API::get()->log_error("Failed to find conditional jmp for MotionBlurIntermediate");
+            SPDLOG_INFO("Failed to find conditional jmp for MotionBlurIntermediate");
+            return;
+        }
+
+        SPDLOG_INFO("Found conditional jmp at 0x{:x}", jmp_insn->addr);
+
+        // Modify to always jmp
+        //if (*(uint8_t*)(jmp_insn->addr) == 0x0F) {
+        if (jmp_insn->instrux.RelOffsLength == 4) {
+            SPDLOG_INFO("Patching conditional far jmp to always jmp");
+
+            if (jmp_insn->instrux.Length == 6) {
+                m_motion_blur_patch = Patch::create(jmp_insn->addr, { 0x90, 0xE9 });
+                SPDLOG_INFO("Patched MotionBlurIntermediate (6 bytes)");
+            } else if (jmp_insn->instrux.Length == 5) {
+                m_motion_blur_patch = Patch::create(jmp_insn->addr, { 0xE9 });
+                SPDLOG_INFO("Patched MotionBlurIntermediate (5 bytes)");
+            } else {
+                API::get()->log_error("Failed to patch MotionBlurIntermediate: unexpected instruction length");
+                SPDLOG_INFO("Failed to patch MotionBlurIntermediate: unexpected instruction length");
+            }
+        } else {
+            SPDLOG_INFO("Patching conditional jmp to always jmp");
+            m_motion_blur_patch = Patch::create(jmp_insn->addr, { 0xEB });
+        }
+
+        SPDLOG_INFO("Patched MotionBlurIntermediate");
     }
 };
 

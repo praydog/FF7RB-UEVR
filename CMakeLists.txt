@@ -73,12 +73,12 @@ FetchContent_Declare(spdlog SYSTEM
 )
 FetchContent_MakeAvailable(spdlog)
 
-message(STATUS "Fetching kananlib (b295511906ae3a5476427b2292ba25ff6af03331)...")
+message(STATUS "Fetching kananlib (7ceca3f80a1ec4f89b613afb3f5b41832766609e)...")
 FetchContent_Declare(kananlib SYSTEM
 	GIT_REPOSITORY
 		"https://github.com/cursey/kananlib"
 	GIT_TAG
-		b295511906ae3a5476427b2292ba25ff6af03331
+		7ceca3f80a1ec4f89b613afb3f5b41832766609e
 )
 FetchContent_MakeAvailable(kananlib)
 
