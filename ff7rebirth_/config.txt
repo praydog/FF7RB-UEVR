@@ -2,3 +2,4 @@ UI_Distance=3.000000
 UI_Size=2.000000
 UI_InvertAlpha=true
 VR_RenderingMethod=1
+VR_GhostingFix=true
