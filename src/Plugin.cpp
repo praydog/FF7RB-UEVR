@@ -107,6 +107,14 @@ public:
     }
 
     void on_pre_engine_tick(API::UGameEngine* engine, float delta) override {
+        static bool once = true;
+
+        if (once) {
+            // enable ghosting fix on startup
+            API::get()->param()->vr->set_mod_value("VR_GhostingFix", "true");
+            once = false;
+        }
+
         m_using_native_stereo = API::VR::get_mod_value<int>("VR_RenderingMethod") == 0;
         m_ghosting_fix_enabled = API::VR::get_mod_value<bool>("VR_GhostingFix") == true;
         m_is_hmd_active = API::VR::is_hmd_active();
