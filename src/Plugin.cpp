@@ -641,12 +641,15 @@ private:
             // Means it's a virtual function which is what we want
             if (auto vtable_addr = utility::scan_ptr(game, *fn_start)) {
                 m_start_frame_vtable_addr = *vtable_addr;
+
                 const auto get_frame_count_fn = *(uintptr_t*)(m_start_frame_vtable_addr + sizeof(void*)); // + 1
                 m_scene_frame_count_offset = *(uint32_t*)(get_frame_count_fn + 2);
-                const auto increment_frame_count_fn = *(uintptr_t*)(m_start_frame_vtable_addr + (sizeof(void*) * 2));
 
+#if 0
+                const auto increment_frame_count_fn = *(uintptr_t*)(m_start_frame_vtable_addr + (sizeof(void*) * 2));
                 m_increment_frame_count_hook_id = API::get()->param()->functions->register_inline_hook((void*)increment_frame_count_fn, &on_increment_frame_count, (void**)&m_orig_increment_frame_count);
-                
+#endif
+
                 SPDLOG_INFO("FScene::StartFrame vtable func at 0x{:x}", *vtable_addr);
                 SPDLOG_INFO("FScene::StartFrame frame count offset at 0x{:x}", m_scene_frame_count_offset);
 
