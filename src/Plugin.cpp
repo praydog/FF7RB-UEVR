@@ -72,6 +72,10 @@ public:
         if (m_update_transform_hook_id >= 0) {
             API::get()->param()->functions->unregister_inline_hook(m_update_transform_hook_id);
         }
+
+        if (m_copy_descriptors_hook_id >= 0) {
+            API::get()->param()->functions->unregister_inline_hook(m_copy_descriptors_hook_id);
+        }
     }
 
     void on_initialize() override {
@@ -104,6 +108,7 @@ public:
         hook_startframe();
         hook_update_transform();
         hook_create_scene_renderer();
+        hook_copy_descriptors();
     }
 
     void on_pre_engine_tick(API::UGameEngine* engine, float delta) override {
@@ -735,6 +740,60 @@ private:
 
         SPDLOG_INFO("FSceneRenderer::CreateSceneRenderer hooked at 0x{:x}", *fn);
 #endif
+    }
+
+    using CDevice_CopyDescriptorsFn = void* (*)(void* self, UINT NumDestDescriptorRanges, const D3D12_CPU_DESCRIPTOR_HANDLE* pDestDescriptorRangeStarts, const UINT* pDestDescriptorRangeSizes, UINT NumSrcDescriptorRanges, const D3D12_CPU_DESCRIPTOR_HANDLE* pSrcDescriptorRangeStarts, const UINT* pSrcDescriptorRangeSizes, D3D12_DESCRIPTOR_HEAP_TYPE DescriptorHeapsType);
+    CDevice_CopyDescriptorsFn m_orig_copy_descriptors{nullptr};
+    int m_copy_descriptors_hook_id{-1};
+
+    // D3D12Core.dll!CDevice::CopyDescriptors(unsigned int,struct D3D12_CPU_DESCRIPTOR_HANDLE const *,unsigned int const *,unsigned int,struct D3D12_CPU_DESCRIPTOR_HANDLE const *,unsigned int const *,enum D3D12_DESCRIPTOR_HEAP_TYPE)	Unknown
+    static void* copy_descriptors(
+        void* self,
+        UINT                              NumDestDescriptorRanges,
+        const D3D12_CPU_DESCRIPTOR_HANDLE *pDestDescriptorRangeStarts,
+        const UINT                        *pDestDescriptorRangeSizes,
+        UINT                              NumSrcDescriptorRanges,
+        const D3D12_CPU_DESCRIPTOR_HANDLE *pSrcDescriptorRangeStarts,
+        const UINT                        *pSrcDescriptorRangeSizes,
+        D3D12_DESCRIPTOR_HEAP_TYPE        DescriptorHeapsType
+    ) 
+    {
+        // SO, this might seem like the most RANDOM thing in the world to even hook this, but hear me out
+        // Square Enix actually has some kind of race condition in their OWN code that causes NVIDIA's usermode driver
+        // to access bad memory, because a command list has not finished executing WHILE this function gets called.
+        // The times we actually catch the exception, we'll just literally not do anything and stop the game from crashing... usually.
+        // But still, this is probably the most unholy thing ever.
+        __try {
+            auto res = g_plugin->m_orig_copy_descriptors(self, NumDestDescriptorRanges, pDestDescriptorRangeStarts, pDestDescriptorRangeSizes, NumSrcDescriptorRanges, pSrcDescriptorRangeStarts, pSrcDescriptorRangeSizes, DescriptorHeapsType);
+            return res;
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            SPDLOG_CRITICAL("Failed to call CDevice::CopyDescriptors, but who cares? We won't crash anyways!");
+        }
+
+        // Allow the GPU to do any work it needs to do, if that was the cause of this crash
+        std::this_thread::sleep_for(std::chrono::milliseconds(33));
+
+        // If it crashes, just don't crash! Simple really.
+        return nullptr;
+    }
+
+    void hook_copy_descriptors() {
+        const auto d3d12core = GetModuleHandleW(L"D3D12Core.dll");
+        if (d3d12core == nullptr) {
+            SPDLOG_ERROR("Failed to find D3D12Core.dll");
+            return;
+        }
+
+        const auto fn = utility::scan(d3d12core, "48 89 5C 24 08 57 48 83 ec 40 48 8b d9 8b bc 24 88 00 00 00");
+
+        if (!fn) {
+            SPDLOG_ERROR("Failed to find CDevice::CopyDescriptors");
+            return;
+        }
+
+        SPDLOG_INFO("CDevice::CopyDescriptors at 0x{:x}", *fn);
+
+        m_copy_descriptors_hook_id = API::get()->param()->functions->register_inline_hook((void*)*fn, &copy_descriptors, (void**)&m_orig_copy_descriptors);
     }
 };
 
