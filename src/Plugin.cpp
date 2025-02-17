@@ -763,6 +763,13 @@ private:
         // to access bad memory, because a command list has not finished executing WHILE this function gets called.
         // The times we actually catch the exception, we'll just literally not do anything and stop the game from crashing... usually.
         // But still, this is probably the most unholy thing ever.
+
+        // Wait for m_orig_copy_descriptors to be set. This function is called quite often so this can actually happen during initial hooking.
+        while (g_plugin->m_orig_copy_descriptors == nullptr) {
+            SPDLOG_INFO("Waiting for m_orig_copy_descriptors to be set...");
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+
         __try {
             auto res = g_plugin->m_orig_copy_descriptors(self, NumDestDescriptorRanges, pDestDescriptorRangeStarts, pDestDescriptorRangeSizes, NumSrcDescriptorRanges, pSrcDescriptorRangeStarts, pSrcDescriptorRangeSizes, DescriptorHeapsType);
             return res;
