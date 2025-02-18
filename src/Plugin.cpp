@@ -761,6 +761,10 @@ private:
         // SO, this might seem like the most RANDOM thing in the world to even hook this, but hear me out
         // Square Enix actually has some kind of race condition in their OWN code that causes NVIDIA's usermode driver
         // to access bad memory, because a command list has not finished executing WHILE this function gets called.
+        // That might not be full picture, but the main issue that shows up is they pass a null descriptor into an entry in the pSrcDescriptorRangeStarts array.
+        // So, this might be a streaming issue? I'm not sure. The crash usually happens when a lot of geometry is on screen before pausing the game.
+        // So we'll do a clean check for null descriptors, which should catch the main issue without letting a bunch of code execute in NVIDIA's driver.
+        // We'll have a try except around the main body anyways just in case we need to add more filters later.
         // The times we actually catch the exception, we'll just literally not do anything and stop the game from crashing... usually.
         // But still, this is probably the most unholy thing ever.
 
@@ -771,14 +775,23 @@ private:
         }
 
         __try {
+            if (pSrcDescriptorRangeStarts != nullptr && NumSrcDescriptorRanges > 0) {
+                const uintptr_t* ranges_uintptr_t_start = (uintptr_t*)pSrcDescriptorRangeStarts;
+                const uintptr_t* ranges_uintptr_t_end = ranges_uintptr_t_start + NumSrcDescriptorRanges;
+                if (std::find(ranges_uintptr_t_start, ranges_uintptr_t_end, 0) != ranges_uintptr_t_end) {
+                    SPDLOG_CRITICAL("Bad read on pSrcDescriptorRangeStarts, skipping");
+                    std::this_thread::yield();
+                    return nullptr;
+                }
+            }
+
             auto res = g_plugin->m_orig_copy_descriptors(self, NumDestDescriptorRanges, pDestDescriptorRangeStarts, pDestDescriptorRangeSizes, NumSrcDescriptorRanges, pSrcDescriptorRangeStarts, pSrcDescriptorRangeSizes, DescriptorHeapsType);
             return res;
         } __except (EXCEPTION_EXECUTE_HANDLER) {
             SPDLOG_CRITICAL("Failed to call CDevice::CopyDescriptors, but who cares? We won't crash anyways!");
         }
 
-        // Allow the GPU to do any work it needs to do, if that was the cause of this crash
-        std::this_thread::sleep_for(std::chrono::milliseconds(33));
+        std::this_thread::yield();
 
         // If it crashes, just don't crash! Simple really.
         return nullptr;
@@ -801,6 +814,8 @@ private:
         SPDLOG_INFO("CDevice::CopyDescriptors at 0x{:x}", *fn);
 
         m_copy_descriptors_hook_id = API::get()->param()->functions->register_inline_hook((void*)*fn, &copy_descriptors, (void**)&m_orig_copy_descriptors);
+
+        SPDLOG_INFO("CDevice::CopyDescriptors hooked!");
     }
 };
 
