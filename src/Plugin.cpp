@@ -776,10 +776,12 @@ private:
 
         __try {
             if (pSrcDescriptorRangeStarts != nullptr && NumSrcDescriptorRanges > 0) {
-                const uintptr_t* ranges_uintptr_t_start = (uintptr_t*)pSrcDescriptorRangeStarts;
-                const uintptr_t* ranges_uintptr_t_end = ranges_uintptr_t_start + NumSrcDescriptorRanges;
-                if (std::find(ranges_uintptr_t_start, ranges_uintptr_t_end, 0) != ranges_uintptr_t_end) {
-                    SPDLOG_CRITICAL("Bad read on pSrcDescriptorRangeStarts, skipping");
+                using DescriptorHandlePtr = decltype(D3D12_CPU_DESCRIPTOR_HANDLE::ptr);
+                const auto ranges_uintptr_t_start = (DescriptorHandlePtr*)pSrcDescriptorRangeStarts;
+                const auto ranges_uintptr_t_end = ranges_uintptr_t_start + NumSrcDescriptorRanges;
+                if (auto it = std::find(ranges_uintptr_t_start, ranges_uintptr_t_end, 0); it != ranges_uintptr_t_end) {
+                    const auto i = std::distance(ranges_uintptr_t_start, it);
+                    SPDLOG_CRITICAL("Bad read on pSrcDescriptorRangeStarts[{}], skipping", i);
                     std::this_thread::yield();
                     return nullptr;
                 }
